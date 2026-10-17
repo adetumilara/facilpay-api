@@ -159,8 +159,37 @@ export class PaymentLinksService {
       customFields: dto.customFields ?? [],
       successUrl: dto.successUrl ?? null,
       cancelUrl: dto.cancelUrl ?? null,
+      maxCompletions: dto.maxCompletions ?? null,
     });
     return this.repo.save(link);
+  }
+
+  async duplicate(
+    id: string,
+    merchantId: string,
+    overrides: Partial<CreatePaymentLinkDto> = {},
+  ): Promise<PaymentLink> {
+    const source = await this.repo.findOneBy({ id });
+    if (!source) throw new NotFoundException('Payment link not found');
+    if (source.merchantId !== merchantId) throw new ForbiddenException();
+
+    const configuration: CreatePaymentLinkDto = {
+      amount: source.amount === null ? undefined : Number(source.amount),
+      flexibleAmount: source.flexibleAmount,
+      minAmount: source.minAmount === null ? undefined : Number(source.minAmount),
+      currency: source.currency,
+      description: source.description ?? undefined,
+      expiresAt: source.expiresAt?.toISOString(),
+      maxCompletions: source.maxCompletions ?? undefined,
+      requiredFields: source.requiredFields,
+      customFields: source.customFields,
+      successUrl: source.successUrl ?? undefined,
+      cancelUrl: source.cancelUrl ?? undefined,
+      ...overrides,
+      slug: overrides.slug,
+    };
+
+    return this.create(configuration, merchantId);
   }
 
   /**
@@ -382,7 +411,7 @@ export class PaymentLinksService {
       userAgent: null,
     });
     await this.eventRepo.save(event);
-    
+
     // Also increment the counter on the payment link
     await this.incrementCompletions(paymentLinkId);
   }
@@ -406,15 +435,15 @@ export class PaymentLinksService {
 
     // Set date range defaults
     const to = dto.to ? new Date(dto.to) : new Date();
-    const from = dto.from 
-      ? new Date(dto.from) 
+    const from = dto.from
+      ? new Date(dto.from)
       : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000); // Default 30 days
-    
+
     const interval = dto.interval || 'day';
 
     // Build bucket query
-    const bucketFormat = interval === 'week' 
-      ? "date_trunc('week', createdAt)" 
+    const bucketFormat = interval === 'week'
+      ? "date_trunc('week', createdAt)"
       : "date_trunc('day', createdAt)";
 
     // Get event counts by bucket
@@ -469,7 +498,7 @@ export class PaymentLinksService {
   ): AnalyticsBucketDto[] {
     const buckets: AnalyticsBucketDto[] = [];
     const current = new Date(from);
-    
+
     // Group events by date
     const eventsByDate = new Map<string, { VIEW: number; REDEEM: number; COMPLETE: number }>();
     for (const event of eventCounts) {
@@ -484,7 +513,7 @@ export class PaymentLinksService {
     while (current <= to) {
       const dateKey = current.toISOString().split('T')[0];
       const counts = eventsByDate.get(dateKey) || { VIEW: 0, REDEEM: 0, COMPLETE: 0 };
-      
+
       const views = counts.VIEW;
       const redemptions = counts.REDEEM;
       const completions = counts.COMPLETE;

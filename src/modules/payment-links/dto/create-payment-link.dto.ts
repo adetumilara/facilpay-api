@@ -21,6 +21,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsISO4217CurrencyCode } from '../../../common/validators/is-iso4217-currency-code.validator';
 import { Type, Transform } from 'class-transformer';
 import { IsSafeHttpsUrl } from '../../../common/validators/is-safe-https-url.validator';
+import { PartialType } from '@nestjs/swagger';
 
 export class CustomFieldDto {
   @IsString()
@@ -143,3 +144,5 @@ export class CreatePaymentLinkDto {
   @ApiPropertyOptional({ example: 'https://merchant.example.com/cancelled', maxLength: 2048 })
   cancelUrl?: string;
 }
+
+export class DuplicatePaymentLinkDto extends PartialType(CreatePaymentLinkDto) { }

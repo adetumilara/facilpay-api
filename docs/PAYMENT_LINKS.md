@@ -32,6 +32,12 @@ Request body:
 
 Response: the created `PaymentLink`, including `token`, `views: 0`, `completions: 0`, and `isActive: true`.
 
+### `POST /v1/payment-links/:id/duplicate`
+
+Creates a new payment link from a link owned by the authenticated merchant. The request body is optional; any supplied create-time configuration fields override the copied values. The duplicate receives a fresh token, no slug by default, zero views and completions, and starts active. A `slug` can be supplied in the body to assign a new custom slug.
+
+Returns `403 Forbidden` if the source link belongs to another merchant, or `404 Not Found` if it does not exist.
+
 ### `GET /v1/payment-links`
 
 Returns a paginated list of payment links belonging to the authenticated merchant. Requires a valid Bearer token.
