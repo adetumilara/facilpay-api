@@ -27,7 +27,10 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { PaymentLinksService } from './payment-links.service';
-import { CreatePaymentLinkDto } from './dto/create-payment-link.dto';
+import {
+  CreatePaymentLinkDto,
+  DuplicatePaymentLinkDto,
+} from './dto/create-payment-link.dto';
 import { UpdatePaymentLinkDto } from './dto/update-payment-link.dto';
 import { RedeemPaymentLinkDto } from './dto/redeem-payment-link.dto';
 import { GetAnalyticsDto, AnalyticsResponseDto } from './dto/get-analytics.dto';
@@ -44,7 +47,7 @@ import {
 @Controller('v1/payment-links')
 @UseGuards(JwtAuthGuard)
 export class PaymentLinksController {
-  constructor(private readonly service: PaymentLinksService) {}
+  constructor(private readonly service: PaymentLinksService) { }
 
   @Post()
   @ApiBearerAuth('bearer')
@@ -56,6 +59,24 @@ export class PaymentLinksController {
   @ApiUnauthorizedResponse({ description: 'Missing or invalid JWT.' })
   create(@Body() dto: CreatePaymentLinkDto, @Request() req: any) {
     return this.service.create(dto, req.user.id);
+  }
+
+  @Post(':id/duplicate')
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Duplicate a payment link',
+    description: 'Creates a new payment link with a fresh token and resets its slug and counters. Configuration can be overridden in the request body.',
+  })
+  @ApiParam({ name: 'id', description: 'Payment link UUID' })
+  @ApiCreatedResponse({ description: 'Payment link duplicated.', type: PaymentLink })
+  @ApiNotFoundResponse({ description: 'Link not found.' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid JWT.' })
+  duplicate(
+    @Param('id') id: string,
+    @Body() dto: DuplicatePaymentLinkDto,
+    @Request() req: any,
+  ) {
+    return this.service.duplicate(id, req.user.id, dto);
   }
 
   @Get()
