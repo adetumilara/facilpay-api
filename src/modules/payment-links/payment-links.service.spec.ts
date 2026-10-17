@@ -23,6 +23,7 @@ describe('PaymentLinksService merchant suspension', () => {
     const service = new PaymentLinksService(
       repo as any,
       {} as any,
+      {} as any,
       { child: () => ({}) } as any,
       usersService as any,
     );
@@ -31,5 +32,99 @@ describe('PaymentLinksService merchant suspension', () => {
       ForbiddenException,
     );
     expect(usersService.assertMerchantActive).toHaveBeenCalledWith('merchant-id');
+  });
+});
+
+describe('PaymentLinksService duplicate', () => {
+  const source = {
+    id: 'link-id',
+    token: 'original-token',
+    slug: 'original-slug',
+    merchantId: 'merchant-id',
+    amount: '25.00',
+    flexibleAmount: false,
+    minAmount: null,
+    currency: 'USD',
+    description: 'Original description',
+    expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+    maxCompletions: 5,
+    requiredFields: { name: true, email: false, phone: false },
+    customFields: [],
+    successUrl: null,
+    cancelUrl: null,
+    isActive: false,
+    views: 42,
+    completions: 3,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+  };
+
+  function createService() {
+    const repo = {
+      findOneBy: jest.fn().mockResolvedValue(source),
+      create: jest.fn((value) => ({
+        isActive: true,
+        views: 0,
+        completions: 0,
+        ...value,
+      })),
+      save: jest.fn(async (value) => ({ id: 'new-id', ...value })),
+    };
+    const usersService = { assertMerchantActive: jest.fn() };
+    const service = new PaymentLinksService(
+      repo as any,
+      {} as any,
+      {} as any,
+      { child: () => ({}) } as any,
+      usersService as any,
+    );
+    return { repo, usersService, service };
+  }
+
+  it('copies configuration with a fresh token and reset identity and counters', async () => {
+    const { repo, service } = createService();
+
+    const result = await service.duplicate('link-id', 'merchant-id');
+    const savedLink = repo.save.mock.calls[0][0];
+
+    expect(result.id).toBe('new-id');
+    expect(savedLink.token).toMatch(/^[a-f0-9]{32}$/);
+    expect(savedLink.token).not.toBe(source.token);
+    expect(savedLink.slug).toBeNull();
+    expect(savedLink.views).toBe(0);
+    expect(savedLink.completions).toBe(0);
+    expect(savedLink.isActive).toBe(true);
+    expect(savedLink.amount).toBe(25);
+    expect(savedLink.maxCompletions).toBe(5);
+    expect(savedLink.merchantId).toBe('merchant-id');
+    expect(savedLink.id).toBeUndefined();
+    expect(savedLink.createdAt).toBeUndefined();
+    expect(savedLink.updatedAt).toBeUndefined();
+  });
+
+  it('applies overrides to copied configuration', async () => {
+    const { repo, service } = createService();
+
+    await service.duplicate('link-id', 'merchant-id', {
+      amount: 40,
+      description: 'Variant',
+      slug: 'new-variant',
+    });
+
+    expect(repo.save.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        amount: 40,
+        description: 'Variant',
+        slug: 'new-variant',
+      }),
+    );
+  });
+
+  it('rejects duplicating another merchant payment link', async () => {
+    const { service } = createService();
+
+    await expect(
+      service.duplicate('link-id', 'another-merchant'),
+    ).rejects.toThrow(ForbiddenException);
   });
 });
