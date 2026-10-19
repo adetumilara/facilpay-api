@@ -12,6 +12,7 @@ import { GetLedgerEntriesDto } from './dto/get-ledger-entries.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../users/user.entity';
+import { BalanceHistoryDto } from './dto/balance-history.dto';
 
 @ApiTags('ledger')
 @ApiBearerAuth('bearer')
@@ -19,6 +20,12 @@ import { User } from '../users/user.entity';
 @Controller('v1/merchants/me')
 export class LedgerController {
   constructor(private readonly ledgerService: LedgerService) {}
+
+  @Get('balance/history')
+  @ApiOperation({ summary: 'Daily closing available balances in the merchant timezone (cached 60 seconds)' })
+  getHistory(@CurrentUser() user: User, @Query() dto: BalanceHistoryDto) {
+    return this.ledgerService.getHistory(user.id, dto);
+  }
 
   @Get('balance')
   @ApiOperation({

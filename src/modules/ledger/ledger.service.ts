@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BalanceHistoryDto } from './dto/balance-history.dto';
+import { MerchantSettings } from '../merchants/entities/merchant-settings.entity';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -27,13 +29,51 @@ export interface LedgerConsistencyReport {
 @Injectable()
 export class LedgerService {
   private readonly logger = new Logger(LedgerService.name);
+  private readonly historyCache = new Map<string, { expires: number; rows: unknown[] }>();
 
   constructor(
     @InjectRepository(LedgerEntry)
     private readonly ledgerRepository: Repository<LedgerEntry>,
   ) {}
 
+  async getHistory(merchantId: string, dto: BalanceHistoryDto) {
+    const from = new Date(`${dto.from}T00:00:00Z`);
+    const to = new Date(`${dto.to}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dto.from) || !/^\d{4}-\d{2}-\d{2}$/.test(dto.to) ||
+        !Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) ||
+        from.toISOString().slice(0, 10) !== dto.from || to.toISOString().slice(0, 10) !== dto.to ||
+        to < from || to.getTime() - from.getTime() > 365 * 86400000) {
+      throw new BadRequestException('Use valid from/to calendar dates spanning at most 366 days');
+    }
+    const settings = await this.ledgerRepository.manager.findOne(MerchantSettings, { where: { merchantId } });
+    const timezone = settings?.timezone || 'UTC';
+    const key = JSON.stringify([merchantId, timezone, dto.from, dto.to]);
+    const cached = this.historyCache.get(key);
+    if (cached && cached.expires > Date.now()) return { merchantId, timezone, days: cached.rows };
+    const rows: unknown[] = await this.ledgerRepository.manager.query(`
+      WITH days AS (
+        SELECT generate_series($2::date::timestamp, $3::date::timestamp, interval '1 day') AS day
+      ), currencies AS (
+        SELECT DISTINCT currency FROM ledger_entries
+        WHERE "merchantId" = $1 AND "createdAt" < (($3::date + 1)::timestamp AT TIME ZONE $4)
+      )
+      SELECT to_char(days.day, 'YYYY-MM-DD') AS date, currencies.currency,
+             COALESCE(SUM(e.amount), 0)::text AS balance
+      FROM days CROSS JOIN currencies
+      LEFT JOIN ledger_entries e ON e."merchantId" = $1
+        AND e.currency = currencies.currency AND e.account = 'AVAILABLE'
+        AND e."createdAt" < ((days.day + interval '1 day') AT TIME ZONE $4)
+      GROUP BY days.day, currencies.currency ORDER BY days.day, currencies.currency
+    `, [merchantId, dto.from, dto.to, timezone]);
+    // Bounded short-lived cache also covers entries written by other modules.
+    for (const [cacheKey, value] of this.historyCache) if (value.expires <= Date.now()) this.historyCache.delete(cacheKey);
+    if (this.historyCache.size >= 500) this.historyCache.delete(this.historyCache.keys().next().value!);
+    this.historyCache.set(key, { expires: Date.now() + 60000, rows });
+    return { merchantId, timezone, days: rows };
+  }
+
   async append(input: LedgerTransactionInput): Promise<LedgerEntry[]> {
+    this.historyCache.clear();
     return appendLedgerTransaction(this.ledgerRepository.manager, input);
   }
 
