@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "feat/payout-cancellation-bulk-settlement-preview-balance-history",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "feat/payout-cancellation-bulk-settlement-preview-balance-history": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "feat/payout-cancellation-bulk-settlement-preview-balance-history",
+    "origin"
+  ]
+}
